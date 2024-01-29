@@ -6,10 +6,10 @@ import "./ReentrancyGuard.sol";
 
 interface IVerifier {
     function verifyProof(
-        uint[2] memory a,
-        uint[2][2] memory b,
-        uint[2] memory c,
-        uint[3] memory input
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[3] calldata _pubSignals
     ) external;
 }
 
@@ -18,7 +18,7 @@ contract Tornado is ReentrancyGuard {
     Hasher hasher;
 
     uint8 public treeLevel = 10;
-    uint256 public denomination = 1 ether;
+    uint256 public denomination = 0.1 ether;
 
     uint256 public nextLeafIdx = 0;
     mapping(uint256 => bool) public roots;
@@ -46,11 +46,9 @@ contract Tornado is ReentrancyGuard {
     );
     event Withdrawal(address to, uint256 nullifierHash);
 
-    constructor(
-        address _hasher // , address _verifier
-    ) {
+    constructor(address _hasher, address _verifier) {
         hasher = Hasher(_hasher);
-        // verifier = _verifier;
+        verifier = _verifier;
     }
 
     function deposit(uint256 _commitment) external payable nonReentrant {
@@ -100,36 +98,36 @@ contract Tornado is ReentrancyGuard {
         emit Deposit(newRoot, hashPairings, hashDirections);
     }
 
-    // function withdraw(
-    //     uint[2] memory a,
-    //     uint[2][2] memory b,
-    //     uint[2] memory c,
-    //     uint[2] memory input
-    // ) external payable nonReentrant {
-    //     uint256 _root = input[0];
-    //     uint256 _nullifierHash = input[1];
+    function withdraw(
+        uint[2] memory a,
+        uint[2][2] memory b,
+        uint[2] memory c,
+        uint[2] memory input
+    ) external payable nonReentrant {
+        uint256 _root = input[0];
+        uint256 _nullifierHash = input[1];
 
-    //     require(!nullifierHashes[_nullifierHash], "already-spent");
-    //     require(roots[_root], "not-root");
+        require(!nullifierHashes[_nullifierHash], "already-spent");
+        require(roots[_root], "not-root");
 
-    //     uint256 _addr = uint256(uint160(msg.sender));
+        uint256 _addr = uint256(uint160(msg.sender));
 
-    //     (bool verifyOK, ) = verifier.call(
-    //         abi.encodeCall(
-    //             IVerifier.verifyProof,
-    //             (a, b, c, [_root, _nullifierHash, _addr])
-    //         )
-    //     );
+        (bool verifyOK, ) = verifier.call(
+            abi.encodeCall(
+                IVerifier.verifyProof,
+                (a, b, c, [_root, _nullifierHash, _addr])
+            )
+        );
 
-    //     require(verifyOK, "invalid-proof");
+        require(verifyOK, "invalid-proof");
 
-    //     nullifierHashes[_nullifierHash] = true;
-    //     address payable target = payable(msg.sender);
+        nullifierHashes[_nullifierHash] = true;
+        address payable target = payable(msg.sender);
 
-    //     (bool ok, ) = target.call{value: denomination}("");
+        (bool ok, ) = target.call{value: denomination}("");
 
-    //     require(ok, "payment-failed");
+        require(ok, "payment-failed");
 
-    //     emit Withdrawal(msg.sender, _nullifierHash);
-    // }
+        emit Withdrawal(msg.sender, _nullifierHash);
+    }
 }

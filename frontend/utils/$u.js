@@ -24,9 +24,20 @@ const utils = {
     }
     return r;
   },
+  BN256ToHex: (n) => {
+    let nstr = BigInt(n).toString(16);
+    while (nstr.length < 64) {
+      nstr = "0" + nstr;
+    }
+    nstr = "0x" + nstr;
+    return nstr;
+  },
   BNToDecimal: (bn) => {
     return ethers.BigNumber.from(bn).toString();
-  }
+  },
+  reverseCoordinates: (p) => {
+    return [p[1], p[0]];
+  },
 };
 
 export default utils;

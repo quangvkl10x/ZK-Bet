@@ -10,12 +10,17 @@ async function main() {
   const Hasher = await hre.ethers.getContractFactory("Hasher");
   const hasher = await Hasher.deploy();
   await hasher.waitForDeployment();
-
   console.log("Hasher deployed to:", await hasher.getAddress());
 
+  const Verifier = await hre.ethers.getContractFactory("Groth16Verifier");
+  const verifier = await Verifier.deploy();
+  await verifier.waitForDeployment();
+  console.log("Verifier deployed to:", await verifier.getAddress());
+
   const hasherAddress = await hasher.getAddress();
+  const verifierAddress = await verifier.getAddress();
   const Tornado = await hre.ethers.getContractFactory("Tornado");
-  const tornado = await Tornado.deploy(hasherAddress);
+  const tornado = await Tornado.deploy(hasherAddress, verifierAddress);
   await tornado.waitForDeployment();
 
   console.log("Tornado deployed to:", await tornado.getAddress());
