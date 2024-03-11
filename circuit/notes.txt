@@ -1,0 +1,33 @@
+Compile circom:
+    circom claim.circom --r1cs --wasm
+
+Feed input:
+    node claim_js/generate_witness.js claim_js/claim.wasm input.json output.wtns
+
+Compile to json:
+    snarkjs wtns export json output.wtns output.json
+
+
+Set up Verifier:
+    snarkjs powersoftau new bn128 4 ceremony_0000.ptau -v
+    snarkjs powersoftau contribute ceremony_0000.ptau ceremony_0001.ptau -v
+
+Verify ceremony:
+    snarkjs powersoftau verify ceremony_0001.ptau
+
+Prepare phase2:
+    snarkjs powersoftau prepare phase2 ceremony_0001.ptau ceremony_final.ptau -v
+    snarkjs groth16 setup claim.r1cs ceremony_final.ptau setup_0000.zkey
+
+Contribute zkey:
+    snarkjs zkey contribute setup_0000.zkey setup_final.zkey
+    snarkjs zkey verify claim.r1cs ceremony_final.ptau setup_final.zkey
+
+Generate Proof:
+    snarkjs groth16 fullprove input.json claim_js/claim.wasm setup_final.zkey proof.json public.json
+
+Export Solidity:
+    snarkjs zkey export solidityverifier setup_final.zkey Verifier.sol
+
+Export calldata:
+    snarkjs zkey export soliditycalldata public.json proof.json
