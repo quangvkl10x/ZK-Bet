@@ -45,7 +45,7 @@ contract Banker is ReentrancyGuard {
     function createGame() public onlyOwner {
         // Create a new game
         currentGameId++;
-        game[currentGameId].deadline = block.timestamp + 5 minutes;
+        game[currentGameId].deadline = block.timestamp + 1 minutes;
         game[currentGameId].totalBounty = address(this).balance;
         game[currentGameId].bestBet = MAX_BET_VALUE;
     }
@@ -67,7 +67,7 @@ contract Banker is ReentrancyGuard {
         uint[3] calldata input
     ) public payable nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline && block.timestamp < game[currentGameId].deadline + 5 minutes,
+            block.timestamp > game[currentGameId].deadline && block.timestamp < game[currentGameId].deadline + 1 minutes,
             "The game is not over"
         );
         uint256 x = input[0];
@@ -91,7 +91,7 @@ contract Banker is ReentrancyGuard {
 
     function claimReward() public nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline + 5 minutes,
+            block.timestamp > game[currentGameId].deadline + 1 minutes,
             "The game is not over"
         );
         require(

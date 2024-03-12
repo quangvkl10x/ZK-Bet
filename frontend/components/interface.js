@@ -1,6 +1,6 @@
 import { useState } from "react";
 import $u from "../utils/$u.js";
-import { ethers } from "ethers";
+import { BigNumber, Contract, ethers } from "ethers";
 import "bootstrap/dist/css/bootstrap.min.css";
 import getGameId from "../api/getGameId.js";
 import getTotalBounty from "../api/getTotalBounty.js";
@@ -15,6 +15,7 @@ const bankerInterface = new ethers.utils.Interface(bankerABI);
 
 const Interface = () => {
   const [account, setAccount] = useState(null);
+  const [signer, setSigner] = useState(null);
   const [section, setSection] = useState("deposit");
   const [submitProofSuccess, setSubmitProofSuccess] = useState(false);
   const [gameId, setGameId] = useState(0);
@@ -42,7 +43,9 @@ const Interface = () => {
         params: [activeAccount, "latest"],
       });
       balance = $u.moveDecimalLeft(ethers.BigNumber.from(balance), 18);
-
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      setSigner(signer);
       let newAccountState = {
         address: activeAccount,
         balance,
@@ -61,9 +64,9 @@ const Interface = () => {
     const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32));
 
     const input = {
-      x: betNumber.toString(),
-      secret: secret.toString(),
-      gameId: gameId.toString(),
+      x: betNumber,
+      secret: secret,
+      gameId: gameId,
     };
 
     const res = await fetch("/bet.wasm");
@@ -72,19 +75,16 @@ const Interface = () => {
     try {
       const r = await depositWC.calculateWitness(input, 0);
       const y = r[1];
-      const value = ethers.utils.parseEther("0.1").toHexString();
-      const tx = {
-        to: bankerAddress,
-        from: account.address,
-        value,
-        data: bankerInterface.encodeFunctionData("submitBet", [y]),
-      };
+      const value = "100000000000000000";
 
       try {
-        const txHash = await window.ethereum.request({
-          method: "eth_sendTransaction",
-          params: [tx],
-        });
+        const ca = new Contract(bankerAddress, bankerABI, signer);
+        const tx = await ca.submitBet(y, { value });
+        console.log(tx);
+        // const txHash = await window.ethereum.request({
+        //   method: "eth_sendTransaction",
+        //   params: [tx],
+        // });
         console.log(btoa(JSON.stringify({ ...input, y: y.toString() })));
         setProofString(btoa(JSON.stringify({ ...input, y: y.toString() })));
       } catch (err) {
