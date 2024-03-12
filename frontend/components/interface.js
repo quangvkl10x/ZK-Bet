@@ -2,22 +2,25 @@ import { useState } from "react";
 import $u from "../utils/$u.js";
 import { ethers } from "ethers";
 import "bootstrap/dist/css/bootstrap.min.css";
+import getGameId from "../api/getGameId.js";
+import getTotalBounty from "../api/getTotalBounty.js";
 
 const wc = require("../circuit/witness_calculator.js");
-//sepolia
-const tornadoAddress = "0x59dC72798Aaacc6557b3Cb14Dd60BCD825dc0312";
+// sepolia
+const bankerAddress = require("../api/helper.js").BankerAddress;
 //hardhat
-// const tornadoAddress = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-const tornadoABI = require("../json/Tornado.json").abi;
-const tornadoInterface = new ethers.utils.Interface(tornadoABI);
+// const bankerAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const bankerABI = require("../json/banker.json").abi;
+const bankerInterface = new ethers.utils.Interface(bankerABI);
 
 const Interface = () => {
   const [account, setAccount] = useState(null);
-  const [proofElements, setProofElements] = useState(null);
-  const [proofStringEl, setProofStringEl] = useState(null);
-  const [textArea, setTextArea] = useState(null);
   const [section, setSection] = useState("deposit");
-  const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
+  const [submitProofSuccess, setSubmitProofSuccess] = useState(false);
+  const [gameId, setGameId] = useState(0);
+  const [betNumber, setBetNumber] = useState(0);
+  const [bounty, setBounty] = useState(0);
+  const [proofString, setProofString] = useState(null);
 
   const connectMetamask = async () => {
     try {
@@ -29,8 +32,8 @@ const Interface = () => {
         method: "eth_requestAccounts",
       });
       let chainId = window.ethereum.networkVersion;
-      if (chainId !== "11155111") {
-        alert("Please switch to Sepolia testnet");
+      if (chainId !== process.env.NEXT_PUBLIC_CHAIN_ID) {
+        alert("Please switch to Baobab testnet");
         throw "Wrong network";
       }
       let activeAccount = accounts[0];
@@ -45,6 +48,8 @@ const Interface = () => {
         balance,
         chainId,
       };
+      setGameId(await getGameId());
+      setBounty(await getTotalBounty());
       setAccount(newAccountState);
     } catch (err) {
       console.log(err);
@@ -53,31 +58,26 @@ const Interface = () => {
 
   const depositEther = async () => {
     // generate secret, nullifier
-    const secret = ethers.BigNumber.from(
-      ethers.utils.randomBytes(32)
-    ).toString();
-    const nullifier = ethers.BigNumber.from(
-      ethers.utils.randomBytes(32)
-    ).toString();
+    const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32));
 
     const input = {
-      secret: $u.BN256ToBin(secret).split(""),
-      nullifier: $u.BN256ToBin(nullifier).split(""),
+      x: betNumber.toString(),
+      secret: secret.toString(),
+      gameId: gameId.toString(),
     };
 
-    const res = await fetch("/deposit.wasm");
+    const res = await fetch("/bet.wasm");
     const buffer = await res.arrayBuffer();
     const depositWC = await wc(buffer);
     try {
       const r = await depositWC.calculateWitness(input, 0);
-      const commitment = r[1];
-      const nullifierHash = r[2];
+      const y = r[1];
       const value = ethers.utils.parseEther("0.1").toHexString();
       const tx = {
-        to: tornadoAddress,
+        to: bankerAddress,
         from: account.address,
         value,
-        data: tornadoInterface.encodeFunctionData("deposit", [commitment]),
+        data: bankerInterface.encodeFunctionData("submitBet", [y]),
       };
 
       try {
@@ -85,15 +85,8 @@ const Interface = () => {
           method: "eth_sendTransaction",
           params: [tx],
         });
-        const proofElements = {
-          nullifierHash: `${nullifierHash}`,
-          secret,
-          nullifier,
-          commitment: `${commitment}`,
-          txHash,
-        };
-        console.log(proofElements);
-        setProofElements(btoa(JSON.stringify(proofElements)));
+        console.log(btoa(JSON.stringify({ ...input, y: y.toString() })));
+        setProofString(btoa(JSON.stringify({ ...input, y: y.toString() })));
       } catch (err) {
         console.log(err);
       }
@@ -102,54 +95,26 @@ const Interface = () => {
     }
   };
 
-  const copyProofString = () => {
-    if (!!proofStringEl) navigator.clipboard.writeText(proofStringEl.innerHTML);
-  };
-
-  const withdraw = async () => {
-    if (!textArea || !textArea.value) {
-      alert("Please paste proof string");
-      return;
-    }
+  const submitProof = async () => {
     try {
-      const proofString = textArea.value;
       const proofElements = JSON.parse(atob(proofString));
+
       const SnarkJs = window["snarkjs"];
 
-      const depositReceipt = await window.ethereum.request({
-        method: "eth_getTransactionReceipt",
-        params: [proofElements.txHash],
-      });
-      if (!depositReceipt) {
-        throw "empty-reciept";
-      }
-      const log = depositReceipt.logs[0];
-      const decodedData = tornadoInterface.decodeEventLog(
-        "Deposit",
-        log.data,
-        log.topics
-      );
-
-      console.log(proofElements);
-
       const proofInput = {
-        root: $u.BNToDecimal(decodedData.root),
-        nullifierHash: proofElements.nullifierHash,
+        x: $u.BNToDecimal(proofElements.x),
+        gameId: $u.BNToDecimal(proofElements.gameId),
+        secret: $u.BNToDecimal(proofElements.secret),
         recipient: $u.BNToDecimal(account.address),
-        secret: $u.BN256ToBin(proofElements.secret).split(""),
-        nullifier: $u.BN256ToBin(proofElements.nullifier).split(""),
-        hashPairings: decodedData.hashPairings.map((n) => $u.BNToDecimal(n)),
-        hashDirections: decodedData.pairDirection,
+        y: $u.BNToDecimal(proofElements.y),
       };
-      console.log(decodedData);
       console.log(proofInput);
       const { proof, publicSignals } = await SnarkJs.groth16.fullProve(
         proofInput,
-        "/withdraw.wasm",
+        "/claim.wasm",
         "/setup_final.zkey"
       );
-      console.log(proof);
-      console.log(publicSignals);
+      console.log(proof, publicSignals);
 
       const callInputs = [
         proof.pi_a.slice(0, 2).map($u.BN256ToHex),
@@ -157,15 +122,16 @@ const Interface = () => {
           .slice(0, 2)
           .map((row) => $u.reverseCoordinates(row.map($u.BN256ToHex))),
         proof.pi_c.slice(0, 2).map($u.BN256ToHex),
-        publicSignals.slice(0, 2).map($u.BN256ToHex),
+        publicSignals.slice(0, 3).map($u.BN256ToHex),
       ];
+      console.log(callInputs);
 
-      const callData = tornadoInterface.encodeFunctionData(
-        "withdraw",
+      const callData = bankerInterface.encodeFunctionData(
+        "submitProof",
         callInputs
       );
       const tx = {
-        to: tornadoAddress,
+        to: bankerAddress,
         from: account.address,
         data: callData,
       };
@@ -178,10 +144,27 @@ const Interface = () => {
         params: [txHash],
       });
 
-      if (!!receipt) setWithdrawalSuccess(true);
+      if (!!receipt) setsubmitProofSuccess(true);
     } catch (err) {
       console.log(err);
     }
+  };
+  const claimBounty = async () => {
+    const calldata = bankerInterface.encodeFunctionData("claimReward", []);
+    const tx = {
+      to: bankerAddress,
+      from: account.address,
+      data: calldata,
+    };
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [tx],
+    });
+    const receipt = await window.ethereum.request({
+      method: "eth_getTransactionReceipt",
+      params: [txHash],
+    });
+    console.log(receipt);
   };
 
   return (
@@ -212,7 +195,7 @@ const Interface = () => {
           ) : (
             <div className="container">
               <div className="navbar-left">
-                <h5>Torn</h5>
+                <h5>ZK-Bet</h5>
               </div>
               <div className="navbar-right">
                 <button className="btn btn-primary" onClick={connectMetamask}>
@@ -231,60 +214,71 @@ const Interface = () => {
                 {section === "deposit" ? (
                   <button className="btn btn-primary">Deposit</button>
                 ) : (
-                  <button
-                    onClick={() => setSection("deposit")}
-                    className="btn btn-outline-primary"
-                  >
-                    Deposit
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setSection("deposit")}
+                      className="btn btn-outline-primary"
+                    >
+                      Deposit
+                    </button>
+                  </>
                 )}
-                {section === "withdraw" ? (
-                  <button className="btn btn-primary">Withdraw</button>
+                {section === "submitProof" ? (
+                  <button className="btn btn-primary">Submit Proof</button>
                 ) : (
                   <button
-                    onClick={() => setSection("withdraw")}
+                    onClick={() => setSection("submitProof")}
                     className="btn btn-outline-primary"
                   >
-                    Withdraw
+                    Submit Proof
+                  </button>
+                )}
+                {section === "claim" ? (
+                  <button className="btn btn-primary">Claim</button>
+                ) : (
+                  <button
+                    onClick={() => setSection("claim")}
+                    className="btn btn-outline-primary"
+                  >
+                    Claim
                   </button>
                 )}
               </div>
               {section === "deposit" && !!account && (
                 <div>
-                  {!!proofElements ? (
-                    <div>
-                      <div className="alert alert-success">
-                        <span>
-                          <strong>Proof of deposit: </strong>
-                        </span>
-                        <div className="p-1" style={{ lineHeight: "12px" }}>
-                          <span
-                            style={{ fontSize: "10px" }}
-                            ref={(proofStringEl) => {
-                              setProofStringEl(proofStringEl);
-                            }}
-                          >
-                            {proofElements}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        className="btn btn-success"
-                        onClick={copyProofString}
-                      >
-                        <span>Copy</span>
-                      </button>
+                  <div>
+                    <span>
+                      <strong>Game Id: {gameId}</strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>
+                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                      </strong>
+                    </span>
+                    <br />
+                  </div>
+                  <form>
+                    <div className="form-group">
+                      <label htmlFor="betNumber">Bet Number</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        id="betNumber"
+                        placeholder="Enter bet number"
+                        onChange={(e) => setBetNumber(e.target.value)}
+                      />
                     </div>
-                  ) : (
-                    <button className="btn btn-success" onClick={depositEther}>
-                      <span className="small">Deposit 0.1 Eth</span>
-                    </button>
-                  )}
+                  </form>
+                  <button className="btn btn-success" onClick={depositEther}>
+                    <span className="small">Submit Bet</span>
+                  </button>
+                  {proofString}
                 </div>
               )}
-              {section === "withdraw" && !!account && (
+              {section === "submitProof" && !!account && (
                 <div>
-                  {withdrawalSuccess ? (
+                  {submitProofSuccess ? (
                     <div>
                       <div className="alert alert-success">
                         <div>
@@ -294,8 +288,8 @@ const Interface = () => {
                         </div>
                         <div>
                           <span className="text-secondary">
-                            Withdraw successful. You can check your wallet to
-                            verify.
+                            Submit Proof successful. You can check your wallet
+                            to verify.
                           </span>
                         </div>
                       </div>
@@ -303,24 +297,49 @@ const Interface = () => {
                   ) : (
                     <div>
                       <div className="form-group">
-                        <textarea
-                          ref={(ta) => {
-                            setTextArea(ta);
-                          }}
-                          className="form-control"
-                          style={{ resize: "none" }}
-                        ></textarea>
+                        <form>
+                          <div className="form-group">
+                            <label htmlFor="proofString">Proof String</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              id="proofString"
+                              placeholder="Enter proof string"
+                              onChange={(e) => setProofString(e.target.value)}
+                            />
+                          </div>
+                        </form>
                       </div>
-                      <button className="btn btn-primary" onClick={withdraw}>
-                        <span className="small">Withdraw</span>
+                      <button className="btn btn-primary" onClick={submitProof}>
+                        <span className="small">Submit Proof</span>
                       </button>
                     </div>
                   )}
                 </div>
               )}
+
+              {section === "claim" && !!account && (
+                <div>
+                  <div>
+                    <span>
+                      <strong>Game Id: {gameId}</strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>
+                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                      </strong>
+                    </span>
+                    <br />
+                  </div>
+                  <button className="btn btn-success" onClick={claimBounty}>
+                    <span className="small">Claim Bounty</span>
+                  </button>
+                </div>
+              )}
               {!account && (
                 <div>
-                  <p>Connect wallet to deposit or withdraw</p>
+                  <p>Connect wallet to deposit or submitProof</p>
                 </div>
               )}
             </div>
