@@ -5,17 +5,21 @@
 // will compile your contracts, add the Hardhat Runtime Environment's members to the
 // global scope, and execute the script.
 const hre = require("hardhat");
+const dotenv = require("dotenv");
+dotenv.config();
 
 async function main() {
-  const Verifier = await hre.ethers.getContractFactory("Groth16Verifier");
-  const verifier = await Verifier.deploy();
-  await verifier.waitForDeployment();
-  console.log("Verifier deployed to:", await verifier.getAddress());
-
-  const Banker = await hre.ethers.getContractFactory("Banker");
-  const banker = await Banker.deploy(await verifier.getAddress());
-  await banker.waitForDeployment();
-  console.log("Banker deployed to:", await banker.getAddress());
+  const bankerAddress = process.env.BANKER_ADDRESS;
+  console.log(bankerAddress);
+  const bankerContract = new hre.ethers.Contract(
+    bankerAddress,
+    require("../artifacts/contracts/Banker.sol/Banker.json").abi,
+    hre.ethers.provider
+  );
+  const [signer] = await hre.ethers.getSigners();
+  const tx = await bankerContract.connect(signer).createGame();
+  await tx.wait();
+  console.log("Game created", tx.hash);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

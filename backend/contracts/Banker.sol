@@ -14,9 +14,9 @@ interface IVerifier {
 
 contract Banker is ReentrancyGuard {
     address immutable owner;
-    uint128 currentGameId = 0;
-    uint8 constant MAX_BET_VALUE = 100;
+    uint128 public currentGameId = 0;
     uint8 constant MIN_BET_VALUE = 1;
+    uint8 constant MAX_BET_VALUE = 100;
     struct GameState {
         uint256 totalBounty;
         mapping(uint256 => bool) bets;
@@ -38,10 +38,14 @@ contract Banker is ReentrancyGuard {
         _;
     }
 
+    function getBounty() public view returns (uint256) {
+        return address(this).balance;
+    }
+
     function createGame() public onlyOwner {
         // Create a new game
         currentGameId++;
-        game[currentGameId].deadline = block.timestamp + 2 minutes;
+        game[currentGameId].deadline = block.timestamp + 5 minutes;
         game[currentGameId].totalBounty = address(this).balance;
         game[currentGameId].bestBet = MAX_BET_VALUE;
     }
@@ -63,13 +67,13 @@ contract Banker is ReentrancyGuard {
         uint[3] calldata input
     ) public payable nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline,
+            block.timestamp > game[currentGameId].deadline && block.timestamp < game[currentGameId].deadline + 5 minutes,
             "The game is not over"
         );
         uint256 x = input[0];
         uint256 y = input[1];
         require(
-            game[currentGameId].betSubmitted[uint8(x)] != address(0),
+            game[currentGameId].betSubmitted[uint8(x)] == address(0),
             "Bet already submitted"
         );
         require(x > MIN_BET_VALUE && x < MAX_BET_VALUE, "Invalid bet");
@@ -87,7 +91,7 @@ contract Banker is ReentrancyGuard {
 
     function claimReward() public nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline,
+            block.timestamp > game[currentGameId].deadline + 5 minutes,
             "The game is not over"
         );
         require(

@@ -4,14 +4,27 @@ dotenv.config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
-  solidity: "0.8.17",
+  solidity: "0.8.24",
   networks: {
-    sepolia: {
+    baobab: {
+      chainId: 1001,
       url: process.env.NODE_URL,
       accounts: [process.env.PRIVATE_KEY],
     },
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY,
+    apiKey: {
+      klaytn: "unnecessary",
+    },
+    customChains: [
+      {
+        network: "klaytn",
+        chainId: 1001,
+        urls: {
+          apiURL: "https://api-baobab.klaytnscope.com/api",
+          browserURL: "https://baobab.klaytnscope.com",
+        },
+      },
+    ],
   },
 };
