@@ -16,7 +16,7 @@ contract Banker is ReentrancyGuard {
     uint256 public currentGameId = 0;
     struct Game {
         uint256 totalBounty;
-        mapping(uint256 => bool) bets;
+        mapping(uint256 => address) bets;
         mapping(uint256 => address) betSubmitted;
         uint256 betDeadline;
         uint256 betDuration;
@@ -135,7 +135,7 @@ contract Banker is ReentrancyGuard {
             "Betting time is over"
         );
         game[currentGameId].totalBounty += msg.value;
-        game[currentGameId].bets[y] = true;
+        game[currentGameId].bets[y] = msg.sender;
     }
 
     function submitProof(
@@ -152,7 +152,10 @@ contract Banker is ReentrancyGuard {
         );
         uint256 x = input[0];
         uint256 y = input[1];
-        require(game[gameId].bets[y], "Bet not submitted");
+        require(
+            game[gameId].bets[y] == msg.sender,
+            "Bet is not submitted with this address"
+        );
         require(
             game[gameId].betSubmitted[x] == address(0),
             "Bet already submitted"
