@@ -183,7 +183,8 @@ contract Banker is ReentrancyGuard {
         require(game[gameId].winner == msg.sender, "You are not the winner");
         uint256 bet = game[gameId].bestBet;
         uint256 remainder = bet - game[gameId].minBetValue;
-        uint256 reward = (game[gameId].totalBounty * remainder) / 100;
+        uint256 reward = (game[gameId].totalBounty * remainder) /
+            (game[gameId].maxBetValue - game[gameId].minBetValue + 1);
         game[gameId].claimed = true;
         payable(msg.sender).transfer(reward);
         payable(game[gameId].owner).transfer(game[gameId].totalBounty - reward);
