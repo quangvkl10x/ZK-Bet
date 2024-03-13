@@ -1,59 +1,80 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import $u from "../utils/$u.js";
-import { BigNumber, Contract, ethers } from "ethers";
+import { ethers } from "ethers";
 import "bootstrap/dist/css/bootstrap.min.css";
-import getGameId from "../api/getGameId.js";
-import getTotalBounty from "../api/getTotalBounty.js";
+import {
+  useConnect,
+  useAccount,
+  useBalance,
+  useReadContract,
+  useWriteContract,
+} from "wagmi";
 
 const wc = require("../circuit/witness_calculator.js");
 // sepolia
-const bankerAddress = require("../api/helper.js").BankerAddress;
+const bankerAddress = process.env.NEXT_PUBLIC_BANKER_ADDRESS;
 //hardhat
 // const bankerAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 const bankerABI = require("../json/banker.json").abi;
-const bankerInterface = new ethers.utils.Interface(bankerABI);
 
 const Interface = () => {
+  const [submitted, setSubmitted] = useState(true);
+  const submitGameId = () => {
+    // setSubmitted(true);
+  };
+  const { connectors, connect } = useConnect();
+  const { address, chainId } = useAccount();
+  const balanceData = useBalance({
+    address: address,
+  });
   const [account, setAccount] = useState(null);
-  const [signer, setSigner] = useState(null);
+  const [gameId, setGameId] = useState(0);
+  const [bounty, setBounty] = useState(0);
+  const gameIdData = useReadContract({
+    abi: bankerABI,
+    address: bankerAddress,
+    functionName: "currentGameId",
+  });
+  const bountyData = useReadContract({
+    abi: bankerABI,
+    address: bankerAddress,
+    functionName: "getBounty",
+  });
+  useEffect(() => {
+    if (!!balanceData?.data) {
+      const newAccount = {
+        address: address,
+        balance: $u.moveDecimalLeft(balanceData.data.value, 18).slice(0, 6),
+        chainId: chainId,
+        symbol: balanceData.data.symbol,
+      };
+      if (newAccount.balance !== account?.balance) {
+        setAccount(newAccount);
+      }
+    }
+    if (!!gameIdData?.data) {
+      if (gameIdData.data.toString() !== gameId)
+        setGameId(gameIdData.data.toString());
+    }
+    if (!!bountyData?.data) {
+      if (bountyData.data.toString() !== bounty)
+        setBounty(bountyData.data.toString());
+    }
+  }, [balanceData, address, chainId]);
+
   const [section, setSection] = useState("deposit");
   const [submitProofSuccess, setSubmitProofSuccess] = useState(false);
-  const [gameId, setGameId] = useState(0);
+
   const [betNumber, setBetNumber] = useState(0);
-  const [bounty, setBounty] = useState(0);
   const [proofString, setProofString] = useState(null);
+  const [createGameSuccess, setCreateGameSuccess] = useState(false);
+  const [claimBountySuccess, setClaimBountySuccess] = useState(false);
+
+  const { writeContractAsync } = useWriteContract();
 
   const connectMetamask = async () => {
     try {
-      if (!window.ethereum) {
-        alert("Please install Metamask");
-        throw "Metamask not installed";
-      }
-      let accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-      let chainId = window.ethereum.networkVersion;
-      if (chainId !== process.env.NEXT_PUBLIC_CHAIN_ID) {
-        alert("Please switch to Baobab testnet");
-        throw "Wrong network";
-      }
-      let activeAccount = accounts[0];
-      let balance = await window.ethereum.request({
-        method: "eth_getBalance",
-        params: [activeAccount, "latest"],
-      });
-      balance = $u.moveDecimalLeft(ethers.BigNumber.from(balance), 18);
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      setSigner(signer);
-      let newAccountState = {
-        address: activeAccount,
-        balance,
-        chainId,
-      };
-      setGameId(await getGameId());
-      setBounty(await getTotalBounty());
-      setAccount(newAccountState);
+      connect({ connector: connectors[0] });
     } catch (err) {
       console.log(err);
     }
@@ -78,14 +99,15 @@ const Interface = () => {
       const value = "100000000000000000";
 
       try {
-        const ca = new Contract(bankerAddress, bankerABI, signer);
-        const tx = await ca.submitBet(y, { value });
-        console.log(tx);
-        // const txHash = await window.ethereum.request({
-        //   method: "eth_sendTransaction",
-        //   params: [tx],
-        // });
-        console.log(btoa(JSON.stringify({ ...input, y: y.toString() })));
+        // const ca = new Contract(bankerAddress, bankerABI, signer);
+        // const tx = await ca.submitBet(y, { value });
+        writeContractAsync({
+          abi: bankerABI,
+          address: bankerAddress,
+          functionName: "submitBet",
+          args: [y],
+          value,
+        });
         setProofString(btoa(JSON.stringify({ ...input, y: y.toString() })));
       } catch (err) {
         console.log(err);
@@ -108,13 +130,11 @@ const Interface = () => {
         recipient: $u.BNToDecimal(account.address),
         y: $u.BNToDecimal(proofElements.y),
       };
-      console.log(proofInput);
       const { proof, publicSignals } = await SnarkJs.groth16.fullProve(
         proofInput,
         "/claim.wasm",
         "/setup_final.zkey"
       );
-      console.log(proof, publicSignals);
 
       const callInputs = [
         proof.pi_a.slice(0, 2).map($u.BN256ToHex),
@@ -124,50 +144,66 @@ const Interface = () => {
         proof.pi_c.slice(0, 2).map($u.BN256ToHex),
         publicSignals.slice(0, 3).map($u.BN256ToHex),
       ];
-      console.log(callInputs);
 
-      const callData = bankerInterface.encodeFunctionData(
-        "submitProof",
-        callInputs
-      );
-      const tx = {
-        to: bankerAddress,
-        from: account.address,
-        data: callData,
-      };
-      const txHash = await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [tx],
+      await writeContractAsync({
+        abi: bankerABI,
+        address: bankerAddress,
+        functionName: "submitProof",
+        args: callInputs,
       });
-      const receipt = await window.ethereum.request({
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-      });
-
-      if (!!receipt) setsubmitProofSuccess(true);
+      setSubmitProofSuccess(true);
     } catch (err) {
       console.log(err);
     }
   };
   const claimBounty = async () => {
-    const calldata = bankerInterface.encodeFunctionData("claimReward", []);
-    const tx = {
-      to: bankerAddress,
-      from: account.address,
-      data: calldata,
-    };
-    const txHash = await window.ethereum.request({
-      method: "eth_sendTransaction",
-      params: [tx],
-    });
-    const receipt = await window.ethereum.request({
-      method: "eth_getTransactionReceipt",
-      params: [txHash],
-    });
-    console.log(receipt);
+    try {
+      const res = await writeContractAsync({
+        abi: bankerABI,
+        address: bankerAddress,
+        functionName: "claimBounty",
+        args: [],
+      });
+      setClaimBountySuccess(true);
+    } catch (err) {
+      console.log(err);
+    }
   };
 
-  return (
+  const createGame = async () => {
+    try {
+      const res = await writeContractAsync({
+        abi: bankerABI,
+        address: bankerAddress,
+        functionName: "createGame",
+        args: [],
+      });
+      setCreateGameSuccess(true);
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  return !submitted ? (
+    <div>
+      <h1>Choose your game id: </h1>
+      <form>
+        <div className="form-group">
+          <label htmlFor="betNumber">Game Id</label>
+          <input
+            type="number"
+            className="form-control"
+            id="betNumber"
+            placeholder="Enter Game Id"
+            onChange={(e) => setGameId(e.target.value)}
+          />
+        </div>
+      </form>
+      <button className="btn btn-success" onClick={submitGameId}>
+        <span className="small">Submit</span>
+      </button>
+    </div>
+  ) : (
     <>
       <div>
         <nav className="navbar navbar-nav fixed-top bg-dark text-light">
@@ -188,7 +224,8 @@ const Interface = () => {
                 <span>
                   Balance:{" "}
                   {account.balance.slice(0, 10) +
-                    (account.balance.length > 10 ? "..." : "")}
+                    (account.balance.length > 10 ? "... " : " ") +
+                    account.symbol}
                 </span>
               </div>
             </div>
@@ -243,6 +280,16 @@ const Interface = () => {
                     Claim
                   </button>
                 )}
+                {section === "createGame" ? (
+                  <button className="btn btn-primary">Create Game</button>
+                ) : (
+                  <button
+                    onClick={() => setSection("createGame")}
+                    className="btn btn-outline-primary"
+                  >
+                    Create Game
+                  </button>
+                )}
               </div>
               {section === "deposit" && !!account && (
                 <div>
@@ -257,6 +304,10 @@ const Interface = () => {
                       </strong>
                     </span>
                     <br />
+                    <span>
+                      <strong>Time Left: 0</strong>
+                    </span>
+                    <br />{" "}
                   </div>
                   <form>
                     <div className="form-group">
@@ -273,11 +324,31 @@ const Interface = () => {
                   <button className="btn btn-success" onClick={depositEther}>
                     <span className="small">Submit Bet</span>
                   </button>
+                  <br />
+                  <br />
+                  <h2>Your Proof:</h2>
+                  <br />
                   {proofString}
                 </div>
               )}
               {section === "submitProof" && !!account && (
                 <div>
+                  <div>
+                    <span>
+                      <strong>Game Id: {gameId}</strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>
+                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                      </strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>Time Left: 0</strong>
+                    </span>
+                    <br />{" "}
+                  </div>
                   {submitProofSuccess ? (
                     <div>
                       <div className="alert alert-success">
@@ -288,8 +359,7 @@ const Interface = () => {
                         </div>
                         <div>
                           <span className="text-secondary">
-                            Submit Proof successful. You can check your wallet
-                            to verify.
+                            Submit Proof successful.
                           </span>
                         </div>
                       </div>
@@ -331,10 +401,45 @@ const Interface = () => {
                       </strong>
                     </span>
                     <br />
+                    <span>
+                      <strong>Time Left: 0</strong>
+                    </span>
+                    <br />
                   </div>
                   <button className="btn btn-success" onClick={claimBounty}>
                     <span className="small">Claim Bounty</span>
                   </button>
+                  {claimBountySuccess && (
+                    <span>Successfully claimed bounty!</span>
+                  )}
+                </div>
+              )}
+
+              {section === "createGame" && !!account && (
+                <div>
+                  <div>
+                    <span>
+                      <strong>Game Id: {gameId}</strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>
+                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                      </strong>
+                    </span>
+                    <br />
+                    <span>
+                      <strong>Time Left: 0</strong>
+                    </span>
+                    <br />
+                  </div>
+                  <button className="btn btn-success" onClick={createGame}>
+                    <span className="small">Create Game</span>
+                  </button>
+                  <br />
+                  {createGameSuccess && (
+                    <span>Successfully created a new game!</span>
+                  )}
                 </div>
               )}
               {!account && (

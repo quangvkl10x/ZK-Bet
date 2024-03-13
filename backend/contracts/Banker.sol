@@ -8,101 +8,202 @@ interface IVerifier {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[3] calldata _pubSignals
+        uint[2] calldata _pubSignals
     ) external returns (bool);
 }
 
 contract Banker is ReentrancyGuard {
-    address immutable owner;
-    uint128 public currentGameId = 0;
-    uint8 constant MIN_BET_VALUE = 1;
-    uint8 constant MAX_BET_VALUE = 100;
-    struct GameState {
+    uint256 public currentGameId = 0;
+    struct Game {
         uint256 totalBounty;
         mapping(uint256 => bool) bets;
-        mapping(uint8 => address) betSubmitted;
-        uint256 deadline;
-        uint8 bestBet;
+        mapping(uint256 => address) betSubmitted;
+        uint256 betDeadline;
+        uint256 betDuration;
+        uint256 submitProofDeadline;
+        uint256 submitProofDuration;
+        uint256 betAmount;
+        uint256 minBetValue;
+        uint256 maxBetValue;
+        uint256 bestBet;
         address winner;
+        address owner;
+        bool claimed;
     }
-    mapping(uint128 => GameState) game;
+    mapping(uint256 => Game) game;
     address immutable verifier;
 
     constructor(address _verifier) {
-        owner = msg.sender;
         verifier = _verifier;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner can call this function");
-        _;
+    function getGame(
+        uint256 gameId
+    )
+        public
+        view
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            address,
+            address,
+            bool
+        )
+    {
+        require(gameId <= currentGameId, "Invalid game id");
+        Game storage g = game[gameId];
+        return (
+            g.totalBounty,
+            g.betDeadline,
+            g.betDuration,
+            g.submitProofDeadline,
+            g.submitProofDuration,
+            g.betAmount,
+            g.minBetValue,
+            g.maxBetValue,
+            g.bestBet,
+            g.winner,
+            g.owner,
+            g.claimed
+        );
     }
 
-    function getBounty() public view returns (uint256) {
-        return address(this).balance;
+    function getActiveGames() public view returns (uint256[] memory) {
+        uint256[] memory activeGames;
+        uint256 count = 0;
+        for (uint256 i = 1; i <= currentGameId; i++) {
+            if (block.timestamp < game[i].submitProofDeadline) {
+                activeGames[count] = i;
+                count++;
+            }
+        }
+        return activeGames;
     }
 
-    function createGame() public onlyOwner {
-        // Create a new game
+    function getRemainingTime(
+        uint256 gameId
+    ) public view returns (uint256, string memory) {
+        require(gameId <= currentGameId, "Invalid game id");
+        if (block.timestamp < game[gameId].betDeadline)
+            return (game[gameId].betDeadline - block.timestamp, "Betting time");
+        else if (block.timestamp < game[gameId].submitProofDeadline)
+            return (
+                game[gameId].submitProofDeadline - block.timestamp,
+                "Proof submission time"
+            );
+        return (0, "Game over");
+    }
+
+    function createGame(
+        uint256 betDuration,
+        uint256 submitProofDuration,
+        uint256 betAmount,
+        uint256 minBetValue,
+        uint256 maxBetValue
+    ) public nonReentrant {
         currentGameId++;
-        game[currentGameId].deadline = block.timestamp + 1 minutes;
-        game[currentGameId].totalBounty = address(this).balance;
-        game[currentGameId].bestBet = MAX_BET_VALUE;
+        game[currentGameId].betDuration = betDuration;
+        game[currentGameId].submitProofDuration = submitProofDuration;
+        game[currentGameId].betDeadline = block.timestamp + betDuration;
+        game[currentGameId].submitProofDeadline =
+            block.timestamp +
+            betDuration +
+            submitProofDuration;
+        game[currentGameId].totalBounty = 0;
+        game[currentGameId].minBetValue = minBetValue;
+        game[currentGameId].maxBetValue = maxBetValue;
+        game[currentGameId].bestBet = maxBetValue;
+        game[currentGameId].betAmount = betAmount;
+        game[currentGameId].winner = address(0);
+        game[currentGameId].owner = msg.sender;
     }
 
-    function submitBet(uint256 y) public payable nonReentrant {
-        require(msg.value == 0.1 ether, "You must bet 0.1 ether");
+    function submitBet(uint256 gameId, uint256 y) public payable nonReentrant {
         require(
-            block.timestamp < game[currentGameId].deadline,
-            "The game is over"
+            msg.value == game[gameId].betAmount,
+            "You must bet the right amount"
+        );
+        require(
+            block.timestamp <= game[gameId].betDeadline,
+            "Betting time is over"
         );
         game[currentGameId].totalBounty += msg.value;
         game[currentGameId].bets[y] = true;
     }
 
     function submitProof(
+        uint256 gameId,
         uint[2] calldata a,
         uint[2][2] calldata b,
         uint[2] calldata c,
-        uint[3] calldata input
+        uint[2] calldata input
     ) public payable nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline && block.timestamp < game[currentGameId].deadline + 1 minutes,
-            "The game is not over"
+            block.timestamp > game[gameId].betDeadline &&
+                block.timestamp < game[gameId].submitProofDeadline,
+            "Not the right time to submit proof"
         );
         uint256 x = input[0];
         uint256 y = input[1];
+        require(game[gameId].bets[y], "Bet not submitted");
         require(
-            game[currentGameId].betSubmitted[uint8(x)] == address(0),
+            game[gameId].betSubmitted[x] == address(0),
             "Bet already submitted"
         );
-        require(x > MIN_BET_VALUE && x < MAX_BET_VALUE, "Invalid bet");
-        uint256 _addr = uint256(uint160(msg.sender));
+        require(
+            x >= game[gameId].minBetValue && x <= game[gameId].maxBetValue,
+            "Invalid bet"
+        );
         (bool verifyOK, ) = verifier.call(
-            abi.encodeCall(IVerifier.verifyProof, (a, b, c, [x, y, _addr]))
+            abi.encodeCall(IVerifier.verifyProof, (a, b, c, [x, y]))
         );
         require(verifyOK, "Invalid proof");
-        game[currentGameId].betSubmitted[uint8(x)] = msg.sender;
-        if (game[currentGameId].bestBet > uint8(x)) {
-            game[currentGameId].bestBet = uint8(x);
-            game[currentGameId].winner = msg.sender;
+        game[gameId].betSubmitted[x] = msg.sender;
+        if (game[gameId].bestBet > x) {
+            game[gameId].bestBet = x;
+            game[gameId].winner = msg.sender;
         }
     }
 
-    function claimReward() public nonReentrant {
+    function claimReward(uint256 gameId) public nonReentrant {
         require(
-            block.timestamp > game[currentGameId].deadline + 1 minutes,
+            block.timestamp >
+                game[gameId].submitProofDeadline +
+                    game[gameId].submitProofDuration,
             "The game is not over"
         );
-        require(
-            game[currentGameId].betSubmitted[game[currentGameId].bestBet] ==
-                msg.sender,
-            "You are not the winner"
-        );
-        uint8 bet = game[currentGameId].bestBet;
-        uint8 remainder = bet - MIN_BET_VALUE;
-        uint256 reward = (game[currentGameId].totalBounty * remainder) / 100;
-
+        require(game[gameId].claimed == false, "Reward already claimed");
+        require(game[gameId].winner == msg.sender, "You are not the winner");
+        uint256 bet = game[gameId].bestBet;
+        uint256 remainder = bet - game[gameId].minBetValue;
+        uint256 reward = (game[gameId].totalBounty * remainder) / 100;
+        game[gameId].claimed = true;
         payable(msg.sender).transfer(reward);
+        payable(game[gameId].owner).transfer(game[gameId].totalBounty - reward);
+    }
+
+    function withdraw(uint256 gameId) public {
+        require(
+            block.timestamp >
+                game[gameId].submitProofDeadline +
+                    game[gameId].submitProofDuration,
+            "The game is not over"
+        );
+        require(game[gameId].claimed == false, "Reward already claimed");
+        require(game[gameId].owner == msg.sender, "You are not the owner");
+        uint256 bet = game[gameId].bestBet;
+        uint256 remainder = bet - game[gameId].minBetValue;
+        uint256 reward = (game[gameId].totalBounty * remainder) / 100;
+
+        game[gameId].claimed = true;
+        payable(game[gameId].winner).transfer(reward);
+        payable(game[gameId].owner).transfer(game[gameId].totalBounty - reward);
     }
 }

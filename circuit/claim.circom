@@ -5,7 +5,6 @@ template Bet(){
     signal input x;
     signal input gameId;
     signal input secret;
-    signal input recipient;
 
     signal input y;
 
@@ -19,9 +18,6 @@ template Bet(){
     
     signal sum0 <== sqr0 + sqr1;
     y === sum0 + sqr2;
-
-    signal recipientSquare;
-    recipientSquare <== recipient * recipient;
 }
 
-component main {public [x, y, recipient]} = Bet();
+component main {public [x, y]} = Bet();
