@@ -15,7 +15,100 @@ const wc = require("../circuit/witness_calculator.js");
 const bankerAddress = process.env.NEXT_PUBLIC_BANKER_ADDRESS;
 //hardhat
 // const bankerAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-const bankerABI = require("../json/banker.json").abi;
+const bankerABI = [
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "_verifier",
+        type: "address",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [],
+    name: "claimReward",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "createGame",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "currentGameId",
+    outputs: [
+      {
+        internalType: "uint128",
+        name: "",
+        type: "uint128",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getBounty",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "y",
+        type: "uint256",
+      },
+    ],
+    name: "submitBet",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256[2]",
+        name: "a",
+        type: "uint256[2]",
+      },
+      {
+        internalType: "uint256[2][2]",
+        name: "b",
+        type: "uint256[2][2]",
+      },
+      {
+        internalType: "uint256[2]",
+        name: "c",
+        type: "uint256[2]",
+      },
+      {
+        internalType: "uint256[3]",
+        name: "input",
+        type: "uint256[3]",
+      },
+    ],
+    name: "submitProof",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+];
 
 const Interface = () => {
   const [submitted, setSubmitted] = useState(true);
