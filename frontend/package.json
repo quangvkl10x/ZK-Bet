@@ -2,11 +2,8 @@
   "name": "frontend",
   "version": "1.0.0",
   "description": "",
-  "homepage": "https://quangvkl10x.github.io/ZK-bet/",
   "main": "index.js",
   "scripts": {
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d build",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
