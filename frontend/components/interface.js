@@ -8,6 +8,7 @@ import {
   useBalance,
   useReadContract,
   useWriteContract,
+  useSwitchChain,
 } from "wagmi";
 
 const wc = require("../circuit/witness_calculator.js");
@@ -115,6 +116,7 @@ const Interface = () => {
   const submitGameId = () => {
     // setSubmitted(true);
   };
+  const { switchChain } = useSwitchChain();
   const { connectors, connect } = useConnect();
   const { address, chainId } = useAccount();
   const balanceData = useBalance({
@@ -134,6 +136,9 @@ const Interface = () => {
     functionName: "getBounty",
   });
   useEffect(() => {
+    if (chainId !== parseInt(process.env.NEXT_PUBLIC_CHAIN_ID)) {
+      switchChain({ chainId: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID) });
+    }
     if (!!balanceData?.data) {
       const newAccount = {
         address: address,
@@ -142,6 +147,12 @@ const Interface = () => {
         symbol: balanceData.data.symbol,
       };
       if (newAccount.balance !== account?.balance) {
+        setAccount(newAccount);
+      }
+      if (newAccount.address !== account?.address) {
+        setAccount(newAccount);
+      }
+      if (newAccount.chainId !== account?.chainId) {
         setAccount(newAccount);
       }
     }
