@@ -17,12 +17,8 @@ async function main() {
     hre.ethers.provider
   );
   const [signer] = await hre.ethers.getSigners();
-  const depositAmount = "100000000000000000"; // 0.1 ETH
-  const tx = await bankerContract
-    .connect(signer)
-    .createGame(60, 60, depositAmount, 1, 100);
-  await tx.wait();
-  console.log("Game created", tx.hash);
+  const timeRemaining = await bankerContract.getRemainingTime(1);
+  console.log("Time remaining", timeRemaining);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

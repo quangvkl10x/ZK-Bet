@@ -89,16 +89,13 @@ contract Banker is ReentrancyGuard {
 
     function getRemainingTime(
         uint256 gameId
-    ) public view returns (uint256, string memory) {
+    ) public view returns (uint256[2] memory) {
         require(gameId <= currentGameId, "Invalid game id");
         if (block.timestamp < game[gameId].betDeadline)
-            return (game[gameId].betDeadline - block.timestamp, "Betting time");
+            return [game[gameId].betDeadline - block.timestamp, 0];
         else if (block.timestamp < game[gameId].submitProofDeadline)
-            return (
-                game[gameId].submitProofDeadline - block.timestamp,
-                "Proof submission time"
-            );
-        return (0, "Game over");
+            return [game[gameId].submitProofDeadline - block.timestamp, 1];
+        return [uint256(0), uint256(2)];
     }
 
     function createGame(
