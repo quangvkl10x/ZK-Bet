@@ -492,6 +492,8 @@ const Interface = () => {
     }
   };
 
+  console.log(activeGameData);
+
   return !submitted ? (
     <div>
       <h1>Active Games</h1>
