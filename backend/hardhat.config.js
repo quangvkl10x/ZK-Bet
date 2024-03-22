@@ -11,6 +11,9 @@ module.exports = {
       url: process.env.NODE_URL,
       accounts: [process.env.PRIVATE_KEY],
     },
+    hardhat: {
+      chainId: 1337,
+    },
   },
   etherscan: {
     apiKey: {

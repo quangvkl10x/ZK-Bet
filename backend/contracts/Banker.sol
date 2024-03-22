@@ -93,7 +93,7 @@ contract Banker is ReentrancyGuard {
         require(gameId <= currentGameId, "Invalid game id");
         if (block.timestamp < game[gameId].betDeadline)
             return [game[gameId].betDeadline - block.timestamp, 0];
-        else if (block.timestamp < game[gameId].submitProofDeadline)
+        if (block.timestamp < game[gameId].submitProofDeadline)
             return [game[gameId].submitProofDeadline - block.timestamp, 1];
         return [uint256(0), uint256(2)];
     }
@@ -143,10 +143,14 @@ contract Banker is ReentrancyGuard {
         uint[2] calldata input
     ) public payable nonReentrant {
         require(
-            block.timestamp > game[gameId].betDeadline &&
-                block.timestamp < game[gameId].submitProofDeadline,
-            "Not the right time to submit proof"
+            block.timestamp > game[gameId].betDeadline,
+            "The time to submit proof is not started yet"
         );
+        require(
+            block.timestamp < game[gameId].submitProofDeadline,
+            "The time to submit proof is over"
+        );
+
         uint256 x = input[0];
         uint256 y = input[1];
         require(
@@ -174,9 +178,7 @@ contract Banker is ReentrancyGuard {
 
     function claimReward(uint256 gameId) public nonReentrant {
         require(
-            block.timestamp >
-                game[gameId].submitProofDeadline +
-                    game[gameId].submitProofDuration,
+            block.timestamp > game[gameId].submitProofDeadline,
             "The game is not over"
         );
         require(game[gameId].claimed == false, "Reward already claimed");
@@ -192,9 +194,7 @@ contract Banker is ReentrancyGuard {
 
     function withdraw(uint256 gameId) public {
         require(
-            block.timestamp >
-                game[gameId].submitProofDeadline +
-                    game[gameId].submitProofDuration,
+            block.timestamp > game[gameId].submitProofDeadline,
             "The game is not over"
         );
         require(game[gameId].claimed == false, "Reward already claimed");

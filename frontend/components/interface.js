@@ -10,6 +10,7 @@ import {
   useWriteContract,
   useSwitchChain,
 } from "wagmi";
+import { parseEther } from "viem";
 
 const wc = require("../circuit/witness_calculator.js");
 // sepolia
@@ -29,14 +30,46 @@ const bankerABI = [
     type: "constructor",
   },
   {
-    inputs: [],
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
+    ],
     name: "claimReward",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
   },
   {
-    inputs: [],
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "betDuration",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "submitProofDuration",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "betAmount",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "minBetValue",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "maxBetValue",
+        type: "uint256",
+      },
+    ],
     name: "createGame",
     outputs: [],
     stateMutability: "nonpayable",
@@ -45,19 +78,6 @@ const bankerABI = [
   {
     inputs: [],
     name: "currentGameId",
-    outputs: [
-      {
-        internalType: "uint128",
-        name: "",
-        type: "uint128",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "getBounty",
     outputs: [
       {
         internalType: "uint256",
@@ -69,7 +89,118 @@ const bankerABI = [
     type: "function",
   },
   {
+    inputs: [],
+    name: "getActiveGames",
+    outputs: [
+      {
+        internalType: "uint256[]",
+        name: "",
+        type: "uint256[]",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
+    ],
+    name: "getGame",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+      {
+        internalType: "bool",
+        name: "",
+        type: "bool",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
+    ],
+    name: "getRemainingTime",
+    outputs: [
+      {
+        internalType: "uint256[2]",
+        name: "",
+        type: "uint256[2]",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
       {
         internalType: "uint256",
         name: "y",
@@ -83,6 +214,11 @@ const bankerABI = [
   },
   {
     inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
       {
         internalType: "uint256[2]",
         name: "a",
@@ -99,9 +235,9 @@ const bankerABI = [
         type: "uint256[2]",
       },
       {
-        internalType: "uint256[3]",
+        internalType: "uint256[2]",
         name: "input",
-        type: "uint256[3]",
+        type: "uint256[2]",
       },
     ],
     name: "submitProof",
@@ -109,12 +245,25 @@ const bankerABI = [
     stateMutability: "payable",
     type: "function",
   },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "gameId",
+        type: "uint256",
+      },
+    ],
+    name: "withdraw",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
 
 const Interface = () => {
-  const [submitted, setSubmitted] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
   const submitGameId = () => {
-    // setSubmitted(true);
+    setSubmitted(true);
   };
   const { switchChain } = useSwitchChain();
   const { connectors, connect } = useConnect();
@@ -124,20 +273,39 @@ const Interface = () => {
   });
   const [account, setAccount] = useState(null);
   const [gameId, setGameId] = useState(0);
-  const [bounty, setBounty] = useState(0);
+  const [remainingTime, setRemainingTime] = useState(0);
+  const getGameStatus = (period) => {
+    if (period === "0") return "Betting";
+    if (period === "1") return "Submitting Proof";
+    return "Game over";
+  };
+  const activeGameData = useReadContract({
+    abi: bankerABI,
+    address: bankerAddress,
+    functionName: "getActiveGames",
+  });
   const gameIdData = useReadContract({
     abi: bankerABI,
     address: bankerAddress,
     functionName: "currentGameId",
   });
-  const bountyData = useReadContract({
+  const [game, setGame] = useState(null);
+  const gameData = useReadContract({
     abi: bankerABI,
     address: bankerAddress,
-    functionName: "getBounty",
+    functionName: "getGame",
+    args: [gameId],
+  });
+  const remainingTimeData = useReadContract({
+    abi: bankerABI,
+    address: bankerAddress,
+    functionName: "getRemainingTime",
+    args: [gameId],
   });
   useEffect(() => {
     if (chainId !== parseInt(process.env.NEXT_PUBLIC_CHAIN_ID)) {
       switchChain({ chainId: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID) });
+      return;
     }
     if (!!balanceData?.data) {
       const newAccount = {
@@ -160,11 +328,42 @@ const Interface = () => {
       if (gameIdData.data.toString() !== gameId)
         setGameId(gameIdData.data.toString());
     }
-    if (!!bountyData?.data) {
-      if (bountyData.data.toString() !== bounty)
-        setBounty(bountyData.data.toString());
+    if (!!gameData?.data) {
+      if (gameData.data[0].toString() === game?.totalBounty.toString()) return;
+      const [
+        totalBounty,
+        betDeadline,
+        betDuration,
+        submitProofDeadline,
+        submitProofDuration,
+        betAmount,
+        minBetValue,
+        maxBetValue,
+        bestBet,
+        winner,
+        owner,
+        claimed,
+      ] = gameData.data;
+      setGame({
+        totalBounty,
+        betDeadline,
+        betDuration,
+        submitProofDeadline,
+        submitProofDuration,
+        betAmount,
+        minBetValue,
+        maxBetValue,
+        bestBet,
+        winner,
+        owner,
+        claimed,
+      });
     }
-  }, [balanceData, address, chainId]);
+    if (!!remainingTimeData?.data) {
+      if (remainingTimeData.data.toString() !== remainingTime)
+        setRemainingTime(remainingTimeData.data[0].toString());
+    }
+  }, [balanceData, address, chainId, remainingTimeData, gameData, gameIdData]);
 
   const [section, setSection] = useState("deposit");
   const [submitProofSuccess, setSubmitProofSuccess] = useState(false);
@@ -172,7 +371,7 @@ const Interface = () => {
   const [betNumber, setBetNumber] = useState(0);
   const [proofString, setProofString] = useState(null);
   const [createGameSuccess, setCreateGameSuccess] = useState(false);
-  const [claimBountySuccess, setClaimBountySuccess] = useState(false);
+  const [claimRewardSuccess, setclaimRewardSuccess] = useState(false);
 
   const { writeContractAsync } = useWriteContract();
 
@@ -209,7 +408,7 @@ const Interface = () => {
           abi: bankerABI,
           address: bankerAddress,
           functionName: "submitBet",
-          args: [y],
+          args: [gameId, y],
           value,
         });
         setProofString(btoa(JSON.stringify({ ...input, y: y.toString() })));
@@ -231,7 +430,6 @@ const Interface = () => {
         x: $u.BNToDecimal(proofElements.x),
         gameId: $u.BNToDecimal(proofElements.gameId),
         secret: $u.BNToDecimal(proofElements.secret),
-        recipient: $u.BNToDecimal(account.address),
         y: $u.BNToDecimal(proofElements.y),
       };
       const { proof, publicSignals } = await SnarkJs.groth16.fullProve(
@@ -253,22 +451,22 @@ const Interface = () => {
         abi: bankerABI,
         address: bankerAddress,
         functionName: "submitProof",
-        args: callInputs,
+        args: [gameId, ...callInputs],
       });
       setSubmitProofSuccess(true);
     } catch (err) {
       console.log(err);
     }
   };
-  const claimBounty = async () => {
+  const claimReward = async () => {
     try {
       const res = await writeContractAsync({
         abi: bankerABI,
         address: bankerAddress,
-        functionName: "claimBounty",
-        args: [],
+        functionName: "claimReward",
+        args: [gameId],
       });
-      setClaimBountySuccess(true);
+      setclaimRewardSuccess(true);
     } catch (err) {
       console.log(err);
     }
@@ -280,7 +478,13 @@ const Interface = () => {
         abi: bankerABI,
         address: bankerAddress,
         functionName: "createGame",
-        args: [],
+        args: [
+          60, // 1 minute bet duration
+          60, // 1 minute submitProofDuration
+          parseEther("0.1"),
+          1, // min bet
+          100, // max bet
+        ],
       });
       setCreateGameSuccess(true);
     } catch (err) {
@@ -290,6 +494,13 @@ const Interface = () => {
 
   return !submitted ? (
     <div>
+      <h1>Active Games</h1>
+      <span>
+        {activeGameData?.data?.map((gameId) => (
+          <span>{gameId}</span>
+        ))}
+      </span>
+      <br />
       <h1>Choose your game id: </h1>
       <form>
         <div className="form-group">
@@ -319,6 +530,15 @@ const Interface = () => {
                 </span>
                 <br />
                 <span>{account.chainId}</span>
+                <br />
+                <span>Time remaining: {remainingTime}s</span>
+                <br />
+                <span>
+                  Game id: {gameId} is{" "}
+                  {!!remainingTimeData?.data
+                    ? getGameStatus(remainingTimeData?.data[1]?.toString())
+                    : "not found"}
+                </span>
               </div>
               <div className="navbar-right">
                 <span>
@@ -404,7 +624,11 @@ const Interface = () => {
                     <br />
                     <span>
                       <strong>
-                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                        Bounty:{" "}
+                        {ethers.utils.formatUnits(
+                          !!game ? game?.totalBounty?.toString() : "0",
+                          18
+                        )}
                       </strong>
                     </span>
                     <br />
@@ -444,7 +668,11 @@ const Interface = () => {
                     <br />
                     <span>
                       <strong>
-                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                        Bounty:{" "}
+                        {ethers.utils.formatUnits(
+                          !!game ? game?.totalBounty?.toString() : "0",
+                          18
+                        )}
                       </strong>
                     </span>
                     <br />
@@ -501,7 +729,11 @@ const Interface = () => {
                     <br />
                     <span>
                       <strong>
-                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                        Bounty:{" "}
+                        {ethers.utils.formatUnits(
+                          !!game ? game?.totalBounty?.toString() : "0",
+                          18
+                        )}
                       </strong>
                     </span>
                     <br />
@@ -510,10 +742,11 @@ const Interface = () => {
                     </span>
                     <br />
                   </div>
-                  <button className="btn btn-success" onClick={claimBounty}>
+                  <button className="btn btn-success" onClick={claimReward}>
                     <span className="small">Claim Bounty</span>
                   </button>
-                  {claimBountySuccess && (
+                  <br />
+                  {claimRewardSuccess && (
                     <span>Successfully claimed bounty!</span>
                   )}
                 </div>
@@ -528,7 +761,11 @@ const Interface = () => {
                     <br />
                     <span>
                       <strong>
-                        Bounty: {ethers.utils.formatUnits(bounty, 18)}
+                        Bounty:{" "}
+                        {ethers.utils.formatUnits(
+                          !!game ? game?.totalBounty?.toString() : "0",
+                          18
+                        )}
                       </strong>
                     </span>
                     <br />
